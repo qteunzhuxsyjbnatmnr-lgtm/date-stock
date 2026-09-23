@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>デートストック</title>
+<style>
+:root {
+  --bg: #f6f5f2; --card: #ffffff; --text: #1f1e1c; --sub: #6b6964; --line: #e4e2dc;
+  --accent: #c2410c; --accent-bg: #fdeee6; --accent-text: #9a3412; --danger: #b42318;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1a1918; --card: #242321; --text: #f1efe8; --sub: #a8a59c; --line: #3a3835;
+    --accent: #f08a5d; --accent-bg: #3d2418; --accent-text: #f5b393; --danger: #f08080; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif; font-size: 15px; }
+.wrap { max-width: 520px; margin: 0 auto; padding: 16px 16px 96px; }
+header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 12px; }
+h1 { font-size: 20px; margin: 0; font-weight: 600; }
+.status { font-size: 12px; color: var(--sub); text-align: right; }
+.link { background: none; border: none; color: var(--sub); font-size: 12px; text-decoration: underline; cursor: pointer; padding: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.chip { border: 1px solid var(--line); background: var(--card); color: var(--sub); border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.chip.on { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent); }
+.shop { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.shop-top { display: flex; justify-content: space-between; gap: 8px; }
+.name { font-weight: 600; }
+.name.blank { color: var(--sub); }
+.dist { color: var(--accent); white-space: nowrap; font-size: 14px; }
+.meta { color: var(--sub); font-size: 13px; margin-top: 2px; }
+.memo { font-size: 13px; margin-top: 6px; }
+.btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; text-decoration: none; }
+.btn.del { color: var(--danger); margin-left: auto; }
+.badge { display: inline-block; font-size: 11px; font-weight: 400; background: var(--accent-bg); color: var(--accent-text); border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
+.empty { text-align: center; color: var(--sub); padding: 40px 0; line-height: 1.8; }
+.fab { position: fixed; right: max(16px, calc(50% - 244px)); bottom: 20px; background: var(--accent); color: #fff; border: none; border-radius: 999px; padding: 14px 22px; font-size: 16px; cursor: pointer; }
+.sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: flex-end; justify-content: center; }
+.sheet-bg.open { display: flex; }
+.sheet { background: var(--card); width: 100%; max-width: 520px; border-radius: 16px 16px 0 0; padding: 18px 16px 24px; max-height: 92vh; overflow-y: auto; }
+.sheet h2 { font-size: 17px; margin: 0 0 8px; }
+label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 4px; }
+input { width: 100%; padding: 10px; font-size: 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
+.hint { font-size: 12px; color: var(--sub); margin-top: 4px; min-height: 16px; }
+.row { display: flex; gap: 8px; }
+.save { width: 100%; margin-top: 18px; background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 12px; font-size: 16px; cursor: pointer; }
+.cancel { width: 100%; margin-top: 8px; background: transparent; color: var(--sub); border: none; padding: 8px; cursor: pointer; }
+.err { color: var(--danger); }
+.gate { text-align: center; padding: 80px 16px; line-height: 1.8; }
+.gate .save { max-width: 280px; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="gate" id="gate">
+  <h1>デートストック</h1>
+  <p id="gateMsg" style="color: var(--sub)">読み込み中…</p>
+  <button class="save" id="login" hidden>Googleでログイン</button>
+</div>
+
+<div id="app" hidden>
+  <div class="wrap">
+    <header>
+      <h1>デートストック</h1>
+      <div class="status">
+        <div id="status">場所を確認中…</div>
+        <button class="link" id="logout">ログアウト</button>
+      </div>
+    </header>
+    <div class="chips" id="filter"></div>
+    <div id="list"></div>
+  </div>
+  <button class="fab" id="openAdd">＋ 追加</button>
+</div>
+
+<div class="sheet-bg" id="sheet">
+  <div class="sheet">
+    <h2 id="sheetTitle">お店を追加</h2>
+    <div class="hint" id="draftMsg"></div>
+
+    <label for="url">① お店のページのアドレスを貼る</label>
+    <input id="url" placeholder="https://...">
+    <div class="hint" id="urlHint">Googleマップのアドレスなら、店名と場所が自動で入ります</div>
+
+    <label for="name">② 店名</label>
+    <input id="name" placeholder="トラットリア 青葉">
+
+    <label for="addr">住所（場所と距離の計算に使います）</label>
+    <input id="addr" placeholder="東京都渋谷区〇〇 1-2-3">
+
+    <label>③ ジャンルを選ぶ</label>
+    <div class="chips" id="genrePick"></div>
+    <div class="row">
+      <input id="newGenre" placeholder="新しいジャンル（例：中華）">
+      <button class="btn" id="addGenre" type="button">足す</button>
+    </div>
+
+    <label for="memo">ひとことメモ（なくてもOK）</label>
+    <input id="memo" placeholder="窓際の席がいい感じ">
+
+    <div class="hint" id="formMsg"></div>
+    <button class="save" id="save">保存</button>
+    <button class="cancel" id="cancel">やめる（書きかけは残ります）</button>
+    <button class="cancel" id="clearDraft">書きかけを消して空にする</button>
+  </div>
+</div>
+
+<div class="sheet-bg" id="confirmBg">
+  <div class="sheet">
+    <h2 id="confirmText"></h2>
+    <button class="save" id="confirmYes" style="background: var(--danger)">消す</button>
+    <button class="cancel" id="confirmNo">やめる</button>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { firebaseConfig } from "./firebase-config.js";
+
+const DEFAULT_GENRES = ["和食", "イタリアン", "カフェ", "バー", "焼肉"];
+const KEY_DRAFT = "dateStock.draft";
+const FIELDS = ["url", "name", "addr", "memo"];
+
+const $ = (id) => document.getElementById(id);
+
+let shops = [];
+let genres = DEFAULT_GENRES.slice();
+let filter = "すべて";
+let pickedGenre = null;
+let here = null;
+let urlCoords = null;
+let editingId = null;
+let uid = null;
+let unsubs = [];
+
+function load(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch { return fallback; }
+}
+function store(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
+if (!firebaseConfig.projectId) {
+  $("gateMsg").textContent = "Firebaseの設定がまだ入っていません（firebase-config.js）";
+  throw new Error("firebase config missing");
+}
+
+const fb = initializeApp(firebaseConfig);
+const auth = getAuth(fb);
+const db = getFirestore(fb);
+
+$("login").onclick = async () => {
+  const provider = new GoogleAuthProvider();
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (e) {
+    if (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment") {
+      await signInWithRedirect(auth, provider);
+    } else if (e.code !== "auth/popup-closed-by-user" && e.code !== "auth/cancelled-popup-request") {
+      $("gateMsg").textContent = "ログインできませんでした。もう一度お試しください（" + e.code + "）";
+    }
+  }
+};
+$("logout").onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, (user) => {
+  unsubs.forEach((u) => u());
+  unsubs = [];
+  if (!user) {
+    uid = null;
+    $("app").hidden = true;
+    $("gate").hidden = false;
+    $("gateMsg").textContent = "お店リストを見るにはログインしてください";
+    $("login").hidden = false;
+    return;
+  }
+  uid = user.uid;
+  $("gate").hidden = true;
+  $("app").hidden = false;
+  unsubs.push(onSnapshot(collection(db, "users", uid, "shops"), (snap) => {
+    shops = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderList();
+  }, () => { $("list").innerHTML = '<div class="empty">リストを読み込めませんでした。少し待って開き直してください</div>'; }));
+  unsubs.push(onSnapshot(doc(db, "users", uid), (snap) => {
+    const g = snap.exists() ? snap.data().genres : null;
+    genres = Array.isArray(g) && g.length ? g : DEFAULT_GENRES.slice();
+    renderFilter();
+    if ($("sheet").classList.contains("open")) renderGenrePick();
+  }));
+  render();
+  locate();
+});
+
+function distanceMeters(a, b) {
+  const R = 6371000, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+function distanceLabel(m) {
+  if (m < 2000) return "徒歩" + Math.max(1, Math.round(m / 80)) + "分";
+  return (m / 1000).toFixed(1) + "km";
+}
+function mapLink(s) {
+  const q = s.lat != null ? s.lat + "," + s.lng : (s.addr || s.name);
+  return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
+}
+function isDraft(s) { return !s.name || !s.genre; }
+function displayName(s) {
+  if (s.name) return s.name;
+  try { return new URL(s.url).hostname.replace(/^www\./, "") + " のお店"; } catch { return "名前未入力のお店"; }
+}
+function esc(t) {
+  return String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function safeUrl(u) { return /^https?:\/\//i.test(u || "") ? u : ""; }
+
+function renderFilter() {
+  if (filter !== "すべて" && !genres.includes(filter)) filter = "すべて";
+  $("filter").innerHTML = ["すべて", ...genres].map((g) =>
+    `<button class="chip ${g === filter ? "on" : ""}" data-g="${esc(g)}">${esc(g)}</button>`).join("");
+}
+function renderList() {
+  let items = shops.filter((s) => filter === "すべて" || s.genre === filter);
+  items = items.map((s) => ({ ...s, d: here && s.lat != null ? distanceMeters(here, s) : null }));
+  items.sort((a, b) => {
+    if (a.d == null && b.d == null) return (b.added || 0) - (a.added || 0);
+    if (a.d == null) return 1;
+    if (b.d == null) return -1;
+    return a.d - b.d;
+  });
+  if (!items.length) {
+    $("list").innerHTML = `<div class="empty">${shops.length ? "このジャンルのお店はまだありません" : "まだお店がありません<br>右下の「＋ 追加」から入れてみましょう"}</div>`;
+    return;
+  }
+  $("list").innerHTML = items.map((s) => {
+    const url = safeUrl(s.url);
+    return `
+    <div class="shop">
+      <div class="shop-top">
+        <span class="name ${s.name ? "" : "blank"}">${esc(displayName(s))}${isDraft(s) ? '<span class="badge">書きかけ</span>' : ""}</span>
+        <span class="dist">${s.d != null ? distanceLabel(s.d) : s.lat == null ? "場所不明" : ""}</span>
+      </div>
+      <div class="meta">${esc(s.genre || "ジャンルなし")}${s.d != null && s.d < 2000 ? "・" + Math.round(s.d) + "m" : ""}</div>
+      ${s.memo ? `<div class="memo">${esc(s.memo)}</div>` : ""}
+      <div class="btns">
+        ${url ? `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">お店のページ</a>` : ""}
+        ${s.lat != null || s.addr || s.name ? `<a class="btn" href="${mapLink(s)}" target="_blank" rel="noopener">地図</a>` : ""}
+        <button class="btn" data-edit="${esc(s.id)}">${isDraft(s) ? "続きを入力" : "直す"}</button>
+        <button class="btn del" data-id="${esc(s.id)}">消す</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+function renderGenrePick() {
+  $("genrePick").innerHTML = genres.map((g) =>
+    `<button type="button" class="chip ${g === pickedGenre ? "on" : ""}" data-g="${esc(g)}">${esc(g)}</button>`).join("");
+}
+function render() { renderFilter(); renderList(); }
+
+function locate() {
+  if (!navigator.geolocation) { $("status").textContent = "場所が分からないため新しい順"; return; }
+  navigator.geolocation.getCurrentPosition(
+    (p) => { here = { lat: p.coords.latitude, lng: p.coords.longitude }; $("status").textContent = "今いる場所から近い順"; renderList(); },
+    () => { $("status").textContent = "場所が分からないため新しい順"; },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+function readGoogleMapsUrl(text) {
+  if (!/google\.[^/]+\/maps|maps\.google/.test(text)) return null;
+  const out = {};
+  const place = text.match(/\/place\/([^/@?]+)/);
+  if (place) out.name = decodeURIComponent(place[1].replace(/\+/g, " "));
+  const exact = text.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  const view = text.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  const hit = exact || view;
+  if (hit) out.coords = { lat: parseFloat(hit[1]), lng: parseFloat(hit[2]) };
+  return out;
+}
+
+async function findPlace(query) {
+  const u = "https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=jp&q=" + encodeURIComponent(query);
+  try {
+    const r = await fetch(u, { headers: { "Accept-Language": "ja" } });
+    const j = await r.json();
+    if (j[0]) return { lat: parseFloat(j[0].lat), lng: parseFloat(j[0].lon) };
+  } catch {}
+  return null;
+}
+
+function fillForm(data) {
+  FIELDS.forEach((id) => ($(id).value = data[id] || ""));
+  $("newGenre").value = "";
+  pickedGenre = data.genre || null;
+  const info = readGoogleMapsUrl(data.url || "");
+  urlCoords = info && info.coords ? info.coords : null;
+  $("urlHint").textContent = "Googleマップのアドレスなら、店名と場所が自動で入ります";
+  $("formMsg").textContent = "";
+  renderGenrePick();
+}
+function formData() {
+  const d = { genre: pickedGenre };
+  FIELDS.forEach((id) => (d[id] = $(id).value.trim()));
+  return d;
+}
+function saveDraft() {
+  if (editingId) return;
+  const d = formData();
+  if (FIELDS.some((id) => d[id]) || d.genre) store(KEY_DRAFT, d);
+  else clearDraft();
+}
+function clearDraft() { try { localStorage.removeItem(KEY_DRAFT); } catch {} }
+
+function openSheet(shop) {
+  editingId = shop ? shop.id : null;
+  $("clearDraft").hidden = !!shop;
+  if (shop) {
+    $("sheetTitle").textContent = isDraft(shop) ? "続きを入力" : "お店を直す";
+    $("draftMsg").textContent = "";
+    fillForm(shop);
+  } else {
+    $("sheetTitle").textContent = "お店を追加";
+    const draft = load(KEY_DRAFT, null);
+    fillForm(draft || { genre: filter !== "すべて" ? filter : null });
+    $("draftMsg").textContent = draft ? "前回の書きかけを戻しました" : "";
+  }
+  $("sheet").classList.add("open");
+  setTimeout(() => $(shop && shop.url ? "name" : "url").focus(), 50);
+}
+function closeSheet() { saveDraft(); $("sheet").classList.remove("open"); }
+
+$("openAdd").onclick = () => openSheet();
+$("cancel").onclick = closeSheet;
+$("clearDraft").onclick = () => { clearDraft(); fillForm({}); $("draftMsg").textContent = ""; $("url").focus(); };
+$("sheet").onclick = (e) => { if (e.target === $("sheet")) closeSheet(); };
+
+$("filter").onclick = (e) => {
+  const g = e.target.dataset.g;
+  if (g) { filter = g; render(); }
+};
+$("genrePick").onclick = (e) => {
+  const g = e.target.dataset.g;
+  if (g) { pickedGenre = g; renderGenrePick(); saveDraft(); }
+};
+$("addGenre").onclick = async () => {
+  const g = $("newGenre").value.trim();
+  if (!g) return;
+  if (!genres.includes(g)) {
+    genres = [...genres, g];
+    renderFilter();
+    try { await setDoc(doc(db, "users", uid), { genres }, { merge: true }); } catch {}
+  }
+  pickedGenre = g;
+  $("newGenre").value = "";
+  renderGenrePick();
+  saveDraft();
+};
+
+$("url").oninput = () => {
+  const info = readGoogleMapsUrl($("url").value.trim());
+  urlCoords = info && info.coords ? info.coords : null;
+  if (info && info.name && !$("name").value) $("name").value = info.name;
+  if (info && (info.name || info.coords)) $("urlHint").textContent = "Googleマップから店名と場所を読み取りました";
+  else if ($("url").value.trim()) $("urlHint").textContent = "このページからは自動で読み取れないので、店名と住所を入れてください";
+};
+
+let pendingDelete = null;
+$("list").onclick = (e) => {
+  const editId = e.target.dataset.edit;
+  if (editId) {
+    const s = shops.find((x) => x.id === editId);
+    if (s) openSheet(s);
+    return;
+  }
+  const id = e.target.dataset.id;
+  if (!id) return;
+  const s = shops.find((x) => x.id === id);
+  if (!s) return;
+  pendingDelete = id;
+  $("confirmText").textContent = `「${displayName(s)}」をリストから消しますか？`;
+  $("confirmBg").classList.add("open");
+};
+$("confirmNo").onclick = () => { pendingDelete = null; $("confirmBg").classList.remove("open"); };
+$("confirmYes").onclick = async () => {
+  const id = pendingDelete;
+  pendingDelete = null;
+  $("confirmBg").classList.remove("open");
+  if (id) { try { await deleteDoc(doc(db, "users", uid, "shops", id)); } catch {} }
+};
+
+$("save").onclick = async () => {
+  const d = formData();
+  if (!d.url && !d.name && !d.addr) {
+    $("formMsg").innerHTML = '<span class="err">アドレスか店名のどちらかを入れてください</span>';
+    $("url").focus();
+    return;
+  }
+  const old = editingId ? shops.find((x) => x.id === editingId) : null;
+  const placeUnchanged = old && old.lat != null && old.addr === d.addr && old.url === d.url && old.name === d.name;
+  let coords = placeUnchanged ? { lat: old.lat, lng: old.lng } : urlCoords;
+  if (!coords && (d.addr || d.name)) {
+    $("save").disabled = true;
+    $("formMsg").textContent = "場所を調べています…";
+    if (d.addr) coords = await findPlace(d.addr);
+    if (!coords && d.name) coords = await findPlace(d.name);
+    $("save").disabled = false;
+  }
+  const shop = { ...d, lat: coords ? coords.lat : null, lng: coords ? coords.lng : null };
+  try {
+    if (old) {
+      await setDoc(doc(db, "users", uid, "shops", old.id), shop, { merge: true });
+    } else {
+      await setDoc(doc(collection(db, "users", uid, "shops")), { ...shop, added: Date.now() });
+      clearDraft();
+    }
+  } catch {
+    $("formMsg").innerHTML = '<span class="err">保存できませんでした。電波の良いところでもう一度押してください</span>';
+    return;
+  }
+  editingId = null;
+  $("sheet").classList.remove("open");
+  if (pickedGenre && filter !== "すべて" && filter !== pickedGenre) filter = "すべて";
+  render();
+};
+
+FIELDS.forEach((id) => $(id).addEventListener("input", () => { $("formMsg").textContent = ""; saveDraft(); }));
+</script>
+</body>
+</html>
