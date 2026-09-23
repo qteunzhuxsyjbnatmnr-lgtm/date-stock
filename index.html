@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>デートストック</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#c2410c">
 <style>
 :root {
   --bg: #f6f5f2; --card: #ffffff; --text: #1f1e1c; --sub: #6b6964; --line: #e4e2dc;
@@ -66,6 +69,7 @@ input { width: 100%; padding: 10px; font-size: 15px; border: 1px solid var(--lin
       <h1>デートストック</h1>
       <div class="status">
         <div id="status">場所を確認中…</div>
+        <a class="link" href="button.html">パソコン用の追加ボタン</a>
         <button class="link" id="logout">ログアウト</button>
       </div>
     </header>
@@ -137,6 +141,30 @@ let editingId = null;
 let uid = null;
 let unsubs = [];
 
+// ほかのページ（パソコンの追加ボタン、スマホの共有）から送られてきたお店の情報
+function cleanTitle(t) {
+  let s = String(t || "").split(/\s*[|｜]\s*|\s+[-–—]\s+/)[0];
+  s = s.replace(/\s*[（(【\[].*$/, "").trim();
+  return s;
+}
+function readIncoming() {
+  const p = new URLSearchParams(location.search);
+  if (!["add", "title", "text", "url"].some((k) => p.has(k))) return null;
+  const text = p.get("text") || "";
+  const urlInText = (text.match(/https?:\/\/\S+/) || [""])[0];
+  const url = p.get("url") || urlInText;
+  const rawName = p.get("name") || p.get("title") || text.replace(urlInText, "").split("\n")[0];
+  const lat = parseFloat(p.get("lat")), lng = parseFloat(p.get("lng"));
+  history.replaceState(null, "", location.pathname);
+  return {
+    url, name: cleanTitle(rawName), addr: (p.get("addr") || "").trim(),
+    lat: isFinite(lat) ? lat : null, lng: isFinite(lng) ? lng : null,
+  };
+}
+let incoming = readIncoming();
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+
 function load(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch { return fallback; }
 }
@@ -193,6 +221,7 @@ onAuthStateChanged(auth, (user) => {
   }));
   render();
   locate();
+  if (incoming) { openSheet(null, incoming); incoming = null; }
 });
 
 function distanceMeters(a, b) {
@@ -316,10 +345,16 @@ function saveDraft() {
 }
 function clearDraft() { try { localStorage.removeItem(KEY_DRAFT); } catch {} }
 
-function openSheet(shop) {
+function openSheet(shop, preset) {
   editingId = shop ? shop.id : null;
   $("clearDraft").hidden = !!shop;
-  if (shop) {
+  if (preset) {
+    $("sheetTitle").textContent = "お店を追加";
+    fillForm({ ...preset, genre: filter !== "すべて" ? filter : null });
+    if (preset.lat != null) urlCoords = { lat: preset.lat, lng: preset.lng };
+    $("draftMsg").textContent = "お店のページから読み取りました。違うところは直せます";
+    if (!preset.addr && !urlCoords) $("urlHint").textContent = "住所は読み取れなかったので、分かれば入れてください";
+  } else if (shop) {
     $("sheetTitle").textContent = isDraft(shop) ? "続きを入力" : "お店を直す";
     $("draftMsg").textContent = "";
     fillForm(shop);

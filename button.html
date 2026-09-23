@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>デートストック 追加ボタン</title>
+<link rel="icon" href="icon-192.png">
+<style>
+:root { --bg: #f6f5f2; --card: #ffffff; --text: #1f1e1c; --sub: #6b6964; --line: #e4e2dc; --accent: #c2410c; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1a1918; --card: #242321; --text: #f1efe8; --sub: #a8a59c; --line: #3a3835; --accent: #f08a5d; }
+}
+body { margin: 0; background: var(--bg); color: var(--text); font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif; font-size: 15px; line-height: 1.8; }
+.wrap { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+h2 { font-size: 16px; margin: 28px 0 8px; }
+.sub { color: var(--sub); font-size: 13px; }
+.drag { display: inline-block; margin: 12px 0; background: var(--accent); color: #fff; text-decoration: none; border-radius: 999px; padding: 12px 22px; font-size: 16px; cursor: grab; }
+ol { padding-left: 1.4em; margin: 0; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+a.back { color: var(--sub); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="./">← デートストックに戻る</a>
+  <h1>パソコン用の追加ボタン</h1>
+  <div class="sub">お店のページを見ながら押すと、店名・住所・場所が入った状態で追加画面が開きます</div>
+
+  <h2>置き方（最初に1回だけ）</h2>
+  <div class="card">
+    <ol>
+      <li>キーボードで <b>Ctrl＋Shift＋B</b> を押して、ブックマークバーを出す</li>
+      <li>下のオレンジのボタンを、マウスでつかんでブックマークバーまで引っぱって離す</li>
+    </ol>
+    <a class="drag" id="bm" href="#">デートストックに追加</a>
+    <div class="sub">このページでボタンを押しても何も起きません。ブックマークバーに置いてから使います</div>
+  </div>
+
+  <h2>使い方</h2>
+  <div class="card">
+    <ol>
+      <li>食べログなどで、お店のページを開く</li>
+      <li>ブックマークバーの「デートストックに追加」を押す</li>
+      <li>新しいタブで追加画面が開くので、ジャンルを選んで「保存」</li>
+    </ol>
+    <div class="sub">サイトによっては住所が読み取れないことがあります。そのときは手で入れてください</div>
+  </div>
+</div>
+
+<script>
+function addToDateStock() {
+  var APP = "https://qteunzhuxsyjbnatmnr-lgtm.github.io/date-stock/";
+  var name = "", addr = "", lat = "", lng = "";
+  var shopType = /Restaurant|FoodEstablishment|LocalBusiness|CafeOrCoffeeShop|BarOrPub|Bakery|Store/;
+  function walk(o) {
+    if (!o || typeof o !== "object") return;
+    if (Array.isArray(o)) { o.forEach(walk); return; }
+    if (o["@graph"]) walk(o["@graph"]);
+    var type = [].concat(o["@type"] || []).join(" ");
+    if (shopType.test(type)) {
+      if (!name && o.name) name = String(o.name);
+      var a = o.address;
+      if (!addr && a) addr = typeof a === "string" ? a : [a.addressRegion, a.addressLocality, a.streetAddress].filter(Boolean).join("");
+      if (!lat && o.geo && o.geo.latitude) { lat = o.geo.latitude; lng = o.geo.longitude; }
+    }
+  }
+  document.querySelectorAll("script[type$=json]").forEach(function (s) {
+    try { walk(JSON.parse(s.textContent)); } catch (e) {}
+  });
+  if (!name) {
+    var og = document.querySelector("meta[property='og:title']");
+    name = (og && og.content) || document.title;
+  }
+  var q = new URLSearchParams({ add: "1", url: location.href, name: name, addr: addr, lat: lat, lng: lng });
+  window.open(APP + "?" + q.toString(), "_blank");
+}
+document.getElementById("bm").href = "javascript:" + encodeURIComponent("(" + addToDateStock.toString() + ")()");
+document.getElementById("bm").addEventListener("click", function (e) { e.preventDefault(); });
+</script>
+</body>
+</html>
