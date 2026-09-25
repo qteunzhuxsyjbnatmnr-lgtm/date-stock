@@ -50,6 +50,10 @@ input { width: 100%; padding: 10px; font-size: 15px; border: 1px solid var(--lin
 .save { width: 100%; margin-top: 18px; background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 12px; font-size: 16px; cursor: pointer; }
 .cancel { width: 100%; margin-top: 8px; background: transparent; color: var(--sub); border: none; padding: 8px; cursor: pointer; }
 .err { color: var(--danger); }
+textarea { width: 100%; padding: 10px; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font-family: inherit; resize: vertical; }
+.imp { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.imp input { width: auto; margin-top: 3px; }
+.imp .meta { margin-top: 0; }
 .gate { text-align: center; padding: 80px 16px; line-height: 1.8; }
 .gate .save { max-width: 280px; }
 [hidden] { display: none !important; }
@@ -69,6 +73,7 @@ input { width: 100%; padding: 10px; font-size: 15px; border: 1px solid var(--lin
       <h1>デートストック</h1>
       <div class="status">
         <div id="status">場所を確認中…</div>
+        <button class="link" id="openImport">メモからまとめて追加</button>
         <a class="link" href="button.html">パソコン用の追加ボタン</a>
         <button class="link" id="logout">ログアウト</button>
       </div>
@@ -119,10 +124,30 @@ input { width: 100%; padding: 10px; font-size: 15px; border: 1px solid var(--lin
   </div>
 </div>
 
+<div class="sheet-bg" id="importBg">
+  <div class="sheet">
+    <h2>メモからまとめて追加</h2>
+    <div class="hint">Obsidianなどのメモにある「店名」の列を含む表を読み取ります</div>
+
+    <label for="importFile">メモのファイルを選ぶ</label>
+    <input id="importFile" type="file" accept=".md,.txt,text/markdown,text/plain">
+
+    <label for="importText">または、表をコピーして貼る</label>
+    <textarea id="importText" rows="6" placeholder="| 店名 | ジャンル | 住所 | ..."></textarea>
+
+    <button class="btn" id="importRead" type="button" style="margin-top: 10px">読み取る</button>
+    <div class="hint" id="importMsg"></div>
+    <div id="importPreview"></div>
+
+    <button class="save" id="importSave" hidden>追加する</button>
+    <button class="cancel" id="importClose">閉じる</button>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 const DEFAULT_GENRES = ["和食", "イタリアン", "カフェ", "バー", "焼肉"];
@@ -464,6 +489,143 @@ $("save").onclick = async () => {
 };
 
 FIELDS.forEach((id) => $(id).addEventListener("input", () => { $("formMsg").textContent = ""; saveDraft(); }));
+
+// メモ（Markdownの表）からまとめて追加
+function cellText(s) {
+  return String(s || "").replace(/\*\*/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").trim();
+}
+function cellUrl(s) {
+  const m = String(s || "").match(/\]\((https?:\/\/[^)\s]+)\)/) || String(s || "").match(/https?:\/\/\S+/);
+  return m ? (m[1] || m[0]) : "";
+}
+function parseShopTable(text) {
+  const lines = String(text).split(/\r?\n/);
+  const split = (l) => l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (!/^\s*\|/.test(lines[i]) || !/^\s*\|?\s*:?-{3,}/.test(lines[i + 1])) continue;
+    const head = split(lines[i]);
+    const col = (re) => head.findIndex((h) => re.test(h));
+    const c = {
+      name: col(/店名|名前|店|name/i), genre: col(/ジャンル|genre/i), addr: col(/住所|所在地|address/i),
+      area: col(/エリア|場所|area/i), url: col(/URL|ページ|リンク|サイト|link/i),
+      lat: col(/緯度|^lat/i), lng: col(/経度|^lng|^lon/i), memo: col(/メモ|ポイント|備考|memo|note/i),
+      budget: col(/予算|price/i), parking: col(/駐車場/),
+    };
+    if (c.name < 0) continue;
+    const rows = [];
+    for (let j = i + 2; j < lines.length && /^\s*\|/.test(lines[j]); j++) {
+      const r = split(lines[j]);
+      const get = (k) => (c[k] >= 0 ? r[c[k]] || "" : "");
+      const name = cellText(get("name"));
+      if (!name) continue;
+      const lat = parseFloat(get("lat")), lng = parseFloat(get("lng"));
+      const parking = cellText(get("parking"));
+      const memo = [cellText(get("memo")), get("budget") && !/要確認/.test(get("budget")) ? "予算：" + cellText(get("budget")) : "",
+        parking && !/要確認/.test(parking) ? "駐車場：" + parking : ""].filter(Boolean).join(" / ");
+      rows.push({
+        name, genreText: cellText(get("genre")), addr: cellText(get("addr")) || cellText(get("area")),
+        url: cellUrl(get("url")) || cellUrl(get("name")), memo,
+        lat: isFinite(lat) ? lat : null, lng: isFinite(lng) ? lng : null,
+      });
+    }
+    if (rows.length) return rows;
+  }
+  return [];
+}
+function pickGenre(text, list) {
+  if (!text) return { genre: null, isNew: false };
+  let best = null, pos = Infinity;
+  list.forEach((g) => { const p = text.indexOf(g); if (p >= 0 && p < pos) { pos = p; best = g; } });
+  if (best) return { genre: best, isNew: false };
+  const first = text.split(/[・、,，\/／]/)[0].trim();
+  return { genre: first || null, isNew: !!first };
+}
+const sameName = (a, b) => a.replace(/\s/g, "").toLowerCase() === b.replace(/\s/g, "").toLowerCase();
+
+let importRows = [];
+function renderImport() {
+  const n = importRows.filter((r) => r.checked).length;
+  $("importPreview").innerHTML = importRows.map((r, i) => `
+    <label class="imp">
+      <input type="checkbox" data-i="${i}" ${r.checked ? "checked" : ""}>
+      <span><b>${esc(r.name)}</b>${r.dup ? '<span class="badge">登録済み</span>' : ""}
+        <div class="meta">${esc(r.genre || "ジャンルなし")}${r.newGenre ? "（新しいジャンル）" : ""}・${r.lat != null ? "場所あり" : r.addr ? "住所から場所を調べます" : "場所不明"}</div>
+      </span>
+    </label>`).join("");
+  $("importSave").hidden = !importRows.length;
+  $("importSave").textContent = n + "軒を追加する";
+}
+function readImport(text) {
+  const rows = parseShopTable(text);
+  if (!rows.length) {
+    importRows = [];
+    $("importMsg").innerHTML = '<span class="err">「店名」の列がある表が見つかりませんでした</span>';
+    renderImport();
+    return;
+  }
+  importRows = rows.map((r) => {
+    const g = pickGenre(r.genreText, genres);
+    const dup = shops.some((s) => s.name && sameName(s.name, r.name));
+    return { ...r, genre: g.genre, newGenre: g.isNew && !genres.includes(g.genre), dup, checked: !dup };
+  });
+  $("importMsg").textContent = importRows.length + "軒見つかりました。追加しないお店はチェックを外してください";
+  renderImport();
+}
+
+$("openImport").onclick = () => {
+  $("importText").value = "";
+  $("importFile").value = "";
+  $("importMsg").textContent = "";
+  importRows = [];
+  renderImport();
+  $("importBg").classList.add("open");
+};
+$("importClose").onclick = () => $("importBg").classList.remove("open");
+$("importRead").onclick = () => readImport($("importText").value);
+$("importFile").onchange = async () => {
+  const f = $("importFile").files[0];
+  if (!f) return;
+  const text = await f.text();
+  $("importText").value = text;
+  readImport(text);
+};
+$("importPreview").onchange = (e) => {
+  const i = e.target.dataset.i;
+  if (i != null) { importRows[i].checked = e.target.checked; renderImport(); }
+};
+$("importSave").onclick = async () => {
+  const picked = importRows.filter((r) => r.checked);
+  if (!picked.length) { $("importMsg").innerHTML = '<span class="err">追加するお店にチェックを入れてください</span>'; return; }
+  $("importSave").disabled = true;
+  for (let k = 0; k < picked.length; k++) {
+    const r = picked[k];
+    if (r.lat == null && r.addr) {
+      $("importMsg").textContent = `場所を調べています…（${k + 1}/${picked.length}）`;
+      const c = await findPlace(r.addr);
+      if (c) { r.lat = c.lat; r.lng = c.lng; }
+      await new Promise((ok) => setTimeout(ok, 1100));
+    }
+  }
+  try {
+    const newGenres = [...new Set(picked.map((r) => r.genre).filter((g) => g && !genres.includes(g)))];
+    const batch = writeBatch(db);
+    const now = Date.now();
+    picked.forEach((r, k) => {
+      batch.set(doc(collection(db, "users", uid, "shops")), {
+        name: r.name, url: r.url, addr: r.addr, genre: r.genre, memo: r.memo,
+        lat: r.lat, lng: r.lng, added: now + k,
+      });
+    });
+    if (newGenres.length) batch.set(doc(db, "users", uid), { genres: [...genres, ...newGenres] }, { merge: true });
+    await batch.commit();
+    $("importMsg").textContent = picked.length + "軒を追加しました";
+    importRows = [];
+    renderImport();
+  } catch {
+    $("importMsg").innerHTML = '<span class="err">追加できませんでした。電波の良いところでもう一度押してください</span>';
+  }
+  $("importSave").disabled = false;
+};
 </script>
 </body>
 </html>
